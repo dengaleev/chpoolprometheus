@@ -1,0 +1,27 @@
+# HELP acquire_duration_nanoseconds Total duration of all successful acquires from the pool.
+# TYPE acquire_duration_nanoseconds counter
+acquire_duration_nanoseconds{host="example.com"} 8
+# HELP acquired_connections The number of currently acquired resources in the pool.
+# TYPE acquired_connections gauge
+acquired_connections{host="example.com"} 15
+# HELP acquires_total Cumulative count of successful acquires from the pool.
+# TYPE acquires_total counter
+acquires_total{host="example.com"} 4
+# HELP canceled_acquires_total Cumulative count of acquires from the pool that were canceled by a context.
+# TYPE canceled_acquires_total counter
+canceled_acquires_total{host="example.com"} 16
+# HELP constructing_connections The number of resources with construction in progress in the pool.
+# TYPE constructing_connections gauge
+constructing_connections{host="example.com"} 23
+# HELP empty_acquires_total Cumulative count of successful acquires from the pool that waited for a resource to be released or constructed because the pool was empty.
+# TYPE empty_acquires_total counter
+empty_acquires_total{host="example.com"} 42
+# HELP idle_connections The number of currently idle resources in the pool.
+# TYPE idle_connections gauge
+idle_connections{host="example.com"} 24
+# HELP max_connections The maximum size of the pool.
+# TYPE max_connections gauge
+max_connections{host="example.com"} 32
+# HELP total_connections Total number of resources currently in the pool. The value is the sum of ConstructingResources, AcquiredResources, and IdleResources.
+# TYPE total_connections gauge
+total_connections{host="example.com"} 61
