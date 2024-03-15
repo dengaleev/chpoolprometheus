@@ -1,11 +1,14 @@
+// Package chpoolprometheus defines the prometheus Collector for chpool.
 package chpoolprometheus
 
 import (
 	"time"
 
+	"github.com/ClickHouse/ch-go/chpool"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// Stat defines the chpool.Stat interface.
 type Stat interface {
 	AcquireCount() int64
 	AcquireDuration() time.Duration
@@ -18,80 +21,86 @@ type Stat interface {
 	TotalResources() int32
 }
 
-type Stater interface {
-	Stat() Stat
-}
+type statFunc func() Stat
 
+// Collector is implements prometheus.Collector interface that collect metrics produced by chpool.
 type Collector struct {
-	stater Stater
+	statFn statFunc
 
-	acquires         prometheus.Desc
-	acquiresDuration prometheus.Desc
-	canceledAcquires prometheus.Desc
-	emptyAcquires    prometheus.Desc
+	acquires         *prometheus.Desc
+	acquiresDuration *prometheus.Desc
+	canceledAcquires *prometheus.Desc
+	emptyAcquires    *prometheus.Desc
 
-	acquiredConnections     prometheus.Desc
-	constructingConnections prometheus.Desc
-	idleConnections         prometheus.Desc
-	totalConnections        prometheus.Desc
-	maxConnections          prometheus.Desc
+	acquiredConnections     *prometheus.Desc
+	constructingConnections *prometheus.Desc
+	idleConnections         *prometheus.Desc
+	totalConnections        *prometheus.Desc
+	maxConnections          *prometheus.Desc
 }
 
-func NewCollector(stater Stater, labels prometheus.Labels) *Collector {
-	return &Collector{
-		stater: stater,
+// NewCollector creates a new Collector for the pool.
+func NewCollector(pool *chpool.Pool, labels prometheus.Labels) *Collector {
+	buildFQName := func(name string) string {
+		return prometheus.BuildFQName("ch", "pool", name)
+	}
 
-		acquires: *prometheus.NewDesc(
-			"acquires_total",
+	return &Collector{
+		statFn: func() Stat {
+			return pool.Stat()
+		},
+
+		acquires: prometheus.NewDesc(
+			buildFQName("acquires_total"),
 			"Cumulative count of successful acquires from the pool.",
 			nil,
 			labels,
 		),
-		acquiresDuration: *prometheus.NewDesc(
-			"acquire_duration_nanoseconds",
+		acquiresDuration: prometheus.NewDesc(
+			buildFQName("acquire_duration_nanoseconds"),
 			"Total duration of all successful acquires from the pool.",
 			nil,
 			labels,
 		),
-		canceledAcquires: *prometheus.NewDesc(
-			"canceled_acquires_total",
+		canceledAcquires: prometheus.NewDesc(
+			buildFQName("canceled_acquires_total"),
 			"Cumulative count of acquires from the pool that were canceled by a context.",
 			nil,
 			labels,
 		),
-		emptyAcquires: *prometheus.NewDesc(
-			"empty_acquires_total",
-			"Cumulative count of successful acquires from the pool that waited for a resource to be released or constructed because the pool was empty.",
+		emptyAcquires: prometheus.NewDesc(
+			buildFQName("empty_acquires_total"),
+			"Cumulative count of successful acquires from the pool that waited for a connection to be released or constructed because the pool was empty.",
 			nil,
 			labels,
 		),
 
-		acquiredConnections: *prometheus.NewDesc(
-			"acquired_connections",
-			"The number of currently acquired resources in the pool.",
+		acquiredConnections: prometheus.NewDesc(
+			buildFQName("acquired_connections"),
+			"The number of currently acquired connections in the pool.",
 			nil,
 			labels,
 		),
-		constructingConnections: *prometheus.NewDesc(
-			"constructing_connections",
-			"The number of resources with construction in progress in the pool.",
+		constructingConnections: prometheus.NewDesc(
+			buildFQName("constructing_connections"),
+			"The number of connections with construction in progress in the pool.",
 			nil,
 			labels,
 		),
-		idleConnections: *prometheus.NewDesc(
-			"idle_connections",
-			"The number of currently idle resources in the pool.",
+		idleConnections: prometheus.NewDesc(
+			buildFQName("idle_connections"),
+			"The number of currently idle connections in the pool.",
 			nil,
 			labels,
 		),
-		totalConnections: *prometheus.NewDesc(
-			"total_connections",
-			"Total number of resources currently in the pool. The value is the sum of ConstructingResources, AcquiredResources, and IdleResources.",
+		totalConnections: prometheus.NewDesc(
+			buildFQName("total_connections"),
+			"Total number of connections currently in the pool. The value is the sum of constructing, acquired, and idle connections.",
 			nil,
 			labels,
 		),
-		maxConnections: *prometheus.NewDesc(
-			"max_connections",
+		maxConnections: prometheus.NewDesc(
+			buildFQName("max_connections"),
 			"The maximum size of the pool.",
 			nil,
 			labels,
@@ -99,56 +108,58 @@ func NewCollector(stater Stater, labels prometheus.Labels) *Collector {
 	}
 }
 
+// Describe implements the prometheus.Collector.Describe method.
 func (c *Collector) Describe(ch chan<- *prometheus.Desc) {
 	prometheus.DescribeByCollect(c, ch)
 }
 
+// Collect implements the prometheus.Collector.Collect method.
 func (c *Collector) Collect(metrics chan<- prometheus.Metric) {
-	stat := c.stater.Stat()
+	stat := c.statFn()
 
 	metrics <- prometheus.MustNewConstMetric(
-		&c.acquires,
+		c.acquires,
 		prometheus.CounterValue,
 		float64(stat.AcquireCount()),
 	)
 	metrics <- prometheus.MustNewConstMetric(
-		&c.acquiresDuration,
+		c.acquiresDuration,
 		prometheus.CounterValue,
 		float64(stat.AcquireDuration().Nanoseconds()),
 	)
 	metrics <- prometheus.MustNewConstMetric(
-		&c.canceledAcquires,
+		c.canceledAcquires,
 		prometheus.CounterValue,
 		float64(stat.CanceledAcquireCount()),
 	)
 	metrics <- prometheus.MustNewConstMetric(
-		&c.emptyAcquires,
+		c.emptyAcquires,
 		prometheus.CounterValue,
 		float64(stat.EmptyAcquireCount()),
 	)
 
 	metrics <- prometheus.MustNewConstMetric(
-		&c.acquiredConnections,
+		c.acquiredConnections,
 		prometheus.GaugeValue,
 		float64(stat.AcquiredResources()),
 	)
 	metrics <- prometheus.MustNewConstMetric(
-		&c.constructingConnections,
+		c.constructingConnections,
 		prometheus.GaugeValue,
 		float64(stat.ConstructingResources()),
 	)
 	metrics <- prometheus.MustNewConstMetric(
-		&c.idleConnections,
+		c.idleConnections,
 		prometheus.GaugeValue,
 		float64(stat.IdleResources()),
 	)
 	metrics <- prometheus.MustNewConstMetric(
-		&c.totalConnections,
+		c.totalConnections,
 		prometheus.GaugeValue,
 		float64(stat.TotalResources()),
 	)
 	metrics <- prometheus.MustNewConstMetric(
-		&c.maxConnections,
+		c.maxConnections,
 		prometheus.GaugeValue,
 		float64(stat.MaxResources()),
 	)
